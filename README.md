@@ -43,6 +43,7 @@ VibeCheck.ai introduces a **trust layer for modern relationships**:
 
 ## 🚀 Live Demo
 👉 [**vibecheck-x402.vercel.app**](https://vibecheck-x402-q8gc.vercel.app/)
+[Public API endpoint](https://vibecheck-x402-q8gc.vercel.app/api/check)
 
 ---
 
