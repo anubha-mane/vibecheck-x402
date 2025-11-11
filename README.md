@@ -47,6 +47,6 @@ VibeCheck.ai introduces a **trust layer for modern relationships**:
 
 ---
 
-**Built with 💜 by Anubha, Fatume & Harsh**  
+**Built with 💜 by Anubha, Fatuma & Harsh**  
 Empowering safer digital connections — one vibe at a time.
 
