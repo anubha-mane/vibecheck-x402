@@ -1,5 +1,5 @@
 # 💜 VibeCheck.ai — Trust Before You Match
-
+<img src="vibecheck.png" width="600"/>
 > **Safer Dating Starts with Blockchain-Powered AI.**  
 > Verify dating or social profiles before you talk to them — powered by **Solana x402 micropayments** and **AI-driven credibility scoring**.
 
@@ -35,10 +35,9 @@ VibeCheck.ai introduces a **trust layer for modern relationships**:
 
 ---
 
-## 🖼️ Mockup Preview
-Here’s a visual of the upcoming **“Profile Verification Flow”**:
+## 🖼️ IRL Scenes
 
-<img src="vibecheck.png" width="600"/>
+<img src="vibecheck1.png" width="600"/>
 
 ---
 
