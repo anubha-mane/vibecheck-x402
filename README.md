@@ -40,8 +40,8 @@ README.md
 🧠 Next Steps for Collaborators
 | Task                                      | Description                              | Status      |
 | ----------------------------------------- | ---------------------------------------- | ----------- |
-| 🔗 Integrate **official Solana x402 API** | Replace mock `/api/x402-pay`             | 🔥 Pending  |
-| 💵 Add **SPL USDC transfers**             | Use token program for true micropayments | 🧩 Pending  |
+| 🔗 Integrate **official Solana x402 API** | Replace mock `/api/x402-pay`             | 🔥 Done  |
+| 💵 Add **SPL USDC transfers**             | Use token program for true micropayments | 🧩 Done  |
 | 🧠 Connect **AI model for vibe scoring**  | Use OpenAI or Llama to assess profiles   | 💡 Pending  |
 | 🎨 Polish the UI                          | Add animation, vibe meter, dark mode     | ✨ Optional  |
 | 🌍 Deploy on Vercel                       | For hackathon submission demo            | 🚀 Optional |
