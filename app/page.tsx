@@ -1,5 +1,7 @@
 "use client";
 
+import { wrap } from "@faremeter/fetch";
+import { createPaymentHandler } from "@faremeter/payment-solana/exact";  
 import { useState } from "react";
 import {
   Connection,
@@ -8,6 +10,11 @@ import {
   SystemProgram,
   Transaction,
 } from "@solana/web3.js";
+import {
+  getAssociatedTokenAddress,
+  createAssociatedTokenAccountInstruction,
+  createTransferInstruction,
+} from "@solana/spl-token";
 
 type Status = "idle" | "loading" | "pay" | "paying" | "done" | "error";
 
@@ -47,6 +54,15 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ handle, platform, name }),
       });
+
+      if (res.status === 402) {
+        const meta = await res.json();
+        console.log("🔥 /api/search 402 data:", JSON.stringify(meta, null, 2));
+        setPaymentMeta(meta);
+        setStatus("pay");
+        setWorking(false);
+        return;
+      }
 
       const data = await res.json();
       if (!res.ok) {
@@ -118,12 +134,14 @@ export default function Home() {
           const json = await res.json().catch(() => ({}));
           setErrMsg(json?.error || "Failed to fetch report");
           return;
-        }
+        };
+      
         const data = await res.json();
         setReport(data);
         setStatus("done");
         return;
       }
+    
 
       setErrMsg("No checkId available. Run 'Run Vibe Check' first.");
     } catch (e: any) {
@@ -154,53 +172,93 @@ export default function Home() {
 
       // Recipient + amount from 402 payload
       const recipient =
-        paymentMeta.recipient || paymentMeta.pay_to; // support either field
+       paymentMeta?.accepts?.[0]?.recipient || // ✅ handle real x402 format
+        paymentMeta?.recipient ||                // legacy fallback
+        paymentMeta?.pay_to;             
       if (!recipient) {
         throw new Error("Missing recipient in payment metadata.");
       }
       const toPubkey = new PublicKey(recipient);
 
-      // Amount: use 'amount' (in SOL) or default to 0.01 for demo
-      const amountStr = String(paymentMeta.amount ?? "0.01");
-      const amountSol = parseFloat(amountStr);
-      if (Number.isNaN(amountSol) || amountSol <= 0) {
-        throw new Error("Invalid amount in payment metadata.");
-      }
-      const lamports = Math.floor(amountSol * 1_000_000_000);
+// ✅ Devnet connection
+const connection = new Connection(clusterApiUrl("devnet"), "confirmed");
 
-      // Devnet connection
-      const connection = new Connection(clusterApiUrl("devnet"), "confirmed");
+// ✅ USDC mint (Devnet)
+const usdcMint = new PublicKey("Gh9ZwEmdLJ8DscKNTkTqPbNwLNNBjuSzaG9Vp2KGtKJr"); // ✅ correct Devnet USDC mint
 
-      // Build transfer transaction
-      const { blockhash } = await connection.getLatestBlockhash();
-      const tx = new Transaction({
-        recentBlockhash: blockhash,
-        feePayer: fromPubkey,
-      }).add(
-        SystemProgram.transfer({
-          fromPubkey,
-          toPubkey,
-          lamports,
-        })
-      );
+// ✅ Convert amount to micro-USDC (6 decimals)
+const amountStr = String(paymentMeta.amount ?? "0.1"); // ✅ 0.1 USDC default
+const amount = Math.floor(parseFloat(amountStr) * 10 ** 6); // ✅ convert to base units
 
-      // Sign & send via Phantom
-      const signedTx = await provider.signTransaction(tx);
-      const sig = await connection.sendRawTransaction(signedTx.serialize());
-      await connection.confirmTransaction(sig, "confirmed");
-      console.log("Payment signature:", sig);
+// ✅ Derive sender and recipient token accounts
+const fromTokenAccount = await getAssociatedTokenAddress(usdcMint, fromPubkey); // ✅ sender ATA
+const toTokenAccount = await getAssociatedTokenAddress(usdcMint, toPubkey); // ✅ recipient ATA
 
-      // After payment -> fetch the protected report
-      const res = await fetch(`/api/check?checkId=${paymentMeta.checkId}`);
-      const data = await res.json();
-      setReport(data);
-      setStatus("done");
-    } catch (e: any) {
-      console.error("solana payment error:", e);
-      setErrMsg(e?.message || "Payment failed");
-      setStatus("pay");
-    }
-  }
+const instructions = []; // ✅ container for instructions
+
+// ✅ Ensure sender has USDC token account
+const fromInfo = await connection.getAccountInfo(fromTokenAccount);
+if (!fromInfo) {
+  instructions.push(
+    createAssociatedTokenAccountInstruction(
+      fromPubkey,          // payer
+      fromTokenAccount,    // new ATA
+      fromPubkey,          // owner
+      usdcMint             // ✅ removed program IDs
+    )
+  );
+}
+
+// ✅ Ensure recipient has USDC token account
+const toInfo = await connection.getAccountInfo(toTokenAccount);
+if (!toInfo) {
+  instructions.push(
+    createAssociatedTokenAccountInstruction(
+      fromPubkey,          // payer
+      toTokenAccount,      // new ATA
+      toPubkey,            // owner
+      usdcMint             // ✅ removed program IDs
+    )
+  );
+}
+
+// ✅ Add transfer instruction (USDC has 6 decimals)
+instructions.push(
+  createTransferInstruction(
+    fromTokenAccount,
+    toTokenAccount,
+    fromPubkey,
+    amount
+  )
+);
+
+// ✅ Build & send transaction
+const { blockhash } = await connection.getLatestBlockhash();
+const tx = new Transaction({
+  recentBlockhash: blockhash,
+  feePayer: fromPubkey,
+}).add(...instructions); // ✅ all steps combined
+
+// ✅ Sign & send via Phantom
+const signedTx = await provider.signTransaction(tx);
+const sig = await connection.sendRawTransaction(signedTx.serialize());
+await connection.confirmTransaction(sig, "confirmed");
+console.log("✅ USDC transfer signature:", sig);
+
+// 🆕 NEW: Notify backend that payment succeeded
+await fetch(`/api/pay?checkId=${paymentMeta.checkId}`, { method: "POST" }); // ✅ 
+
+// After payment -> fetch the protected report (unchanged)
+const res = await fetch(`/api/check?checkId=${paymentMeta.checkId}&sig=${sig}`); // small addition: send sig to backend
+const data = await res.json();
+setReport(data);
+setStatus("done");
+} catch (e: any) {
+  console.error("solana payment error:", e);
+  setErrMsg(e?.message || "Payment failed");
+  setStatus("pay");
+}
+} 
 
   // Helper: generate initials avatar when image not available
   function initialsAvatar(nameStr?: string, handleStr?: string) {
@@ -355,28 +413,28 @@ export default function Home() {
 )}
 
 
-      {/* Payment UI */}
-      {status === "pay" && paymentMeta && (
-        <div style={styles.payBox}>
-          <h3 style={{ margin: 0 }}>402 Payment Required (x402)</h3>
-          <p style={{ marginTop: 8 }}>
-            Pay <b>{paymentMeta.amount ?? "0.01"}</b> {paymentMeta.currency ?? "SOL"} to unlock this
-            vibe report.
-          </p>
-          <p style={{ fontSize: 12, opacity: 0.85 }}>
-            Paying to: {(paymentMeta.recipient || paymentMeta.pay_to || "").slice(0, 6)}…
-            {(paymentMeta.recipient || paymentMeta.pay_to || "").slice(-6)}
-          </p>
-          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-            <button onClick={doPayment} style={styles.payBtn} disabled={status === "paying"}>
-              {status === "paying" ? "Waiting for wallet…" : "Pay with Solana (Phantom)"}
-            </button>
-            <button onClick={() => fetchResult()} style={{ ...styles.primaryBtn, background: "#f59e0b" }}>
-              Try fetch result
-            </button>
-          </div>
-        </div>
-      )}
+{/* Payment UI */}
+{(status === "pay" || status === "paying") && paymentMeta && (
+  <div style={styles.payBox}>
+    <h3 style={{ margin: 0 }}>402 Payment Required (x402)</h3>
+    <p style={{ marginTop: 8 }}>
+      Pay <b>{paymentMeta.amount ?? "0.01"}</b> {paymentMeta.currency ?? "USDC"} to unlock this
+      vibe report.
+    </p>
+    <p style={{ fontSize: 12, opacity: 0.85 }}>
+      Paying to: {(paymentMeta.recipient || paymentMeta.pay_to || "").slice(0, 6)}…
+      {(paymentMeta.recipient || paymentMeta.pay_to || "").slice(-6)}
+    </p>
+    <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+      <button onClick={doPayment} style={styles.payBtn} disabled={status === "paying" || !paymentMeta}>
+        {status === "paying" ? "Waiting for wallet…" : "Pay with Solana (Phantom)"}
+      </button>
+      <button onClick={() => fetchResult()} style={{ ...styles.primaryBtn, background: "#f59e0b" }}>
+        Try fetch result
+      </button>
+    </div>
+  </div>
+)}
 
       {/* Report UI */}
       {status === "done" && report && (
