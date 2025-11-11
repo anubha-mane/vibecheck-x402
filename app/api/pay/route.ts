@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 
 export async function POST(req: Request) {
-  const body = await req.json();
-  const { checkId } = body;
+  // 🆕 changed: get checkId from query param instead of JSON body
+  const { searchParams } = new URL(req.url);
+  const checkId = searchParams.get("checkId");
 
   if (!checkId) {
     return NextResponse.json({ error: "checkId required" }, { status: 400 });
@@ -16,6 +17,5 @@ export async function POST(req: Request) {
   globalThis.__WIPECHECK_PAID__ = PAID;
 
   // here is where real Solana/x402 verification would go later
-
   return NextResponse.json({ ok: true });
 }
